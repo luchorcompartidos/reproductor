@@ -1,0 +1,234 @@
+# Compila Web (GitHub Pages), APK (Android) y .exe (Windows) en cada push a main.
+# Versión (SemVer): poné [patch], [minor] o [major] en el mensaje del commit para crear una Release.
+# Sin marca: se publica la web y quedan APK y .exe de prueba (Artifacts), pero NO se crea Release.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Tipo de Release"
+        type: choice
+        options: [ninguna, patch, minor, major]
+        default: ninguna
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  actions: read
+
+concurrency:
+  group: ci-main
+  cancel-in-progress: false
+
+env:
+  FLUTTER_CREATE: flutter create --project-name reproductor --org com.luchorcompartidos
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      number: ${{ steps.v.outputs.number }}
+      code: ${{ steps.v.outputs.code }}
+      release: ${{ steps.v.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: v
+        name: Calcular versión desde los tags
+        env:
+          MSG: ${{ github.event.head_commit.message }}
+          BUMP_IN: ${{ github.event.inputs.bump }}
+          LINK: ${{ github.server_url }}/${{ github.repository }}/actions/workflows/ci.yml
+        run: |
+          last=$(git tag --list 'v*' --sort=-v:refname | head -n1)
+          [ -z "$last" ] && last="v0.0.0"
+          IFS=. read -r MA MI PA <<< "${last#v}"
+          bump=""
+          case "$MSG" in
+            *"[skip release]"*) bump="" ;;
+            *"[major]"*) bump=major ;;
+            *"[minor]"*) bump=minor ;;
+            *"[patch]"*) bump=patch ;;
+          esac
+          if [ -n "$BUMP_IN" ] && [ "$BUMP_IN" != "ninguna" ]; then bump="$BUMP_IN"; fi
+          case "$bump" in
+            major) MA=$((MA+1)); MI=0; PA=0 ;;
+            minor) MI=$((MI+1)); PA=0 ;;
+            patch) PA=$((PA+1)) ;;
+          esac
+          CODE=$((MA*10000 + MI*100 + PA)); [ "$CODE" -lt 1 ] && CODE=1
+          echo "number=$MA.$MI.$PA" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          if [ -n "$bump" ]; then
+            echo "version=$MA.$MI.$PA" >> "$GITHUB_OUTPUT"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "Release nueva: v$MA.$MI.$PA ($bump)"
+          else
+            echo "version=$MA.$MI.$PA-prueba" >> "$GITHUB_OUTPUT"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Sin Release::El commit no tiene [patch], [minor] ni [major]. Se publica la web y quedan APK y .exe de prueba, pero no se crea Release. Para crearla, usá 'Run workflow' y elegí el tipo."
+            {
+              echo "## ⚠️ Push sin Release"
+              echo
+              echo "No se creó tag ni Release. La web se publica igual; el APK y el .exe de prueba quedan en *Artifacts*."
+              echo
+              echo "**¿Preferís crear una versión de este cambio?** Entrá a [CI]($LINK), tocá **Run workflow** y elegí el tipo (patch, minor o major)."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  web:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: $FLUTTER_CREATE --platforms=web .
+      - run: python3 tool/patch_platforms.py web
+      - name: Compilar web
+        run: |
+          flutter pub get
+          flutter build web --release \
+            --base-href "/${{ github.event.repository.name }}/" \
+            --dart-define=APP_VERSION=${{ needs.version.outputs.version }}
+          sed -i 's#<title>[^<]*</title>#<title>Reproductor</title>#' build/web/index.html
+          cp build/web/index.html build/web/404.html
+      - name: Publicar en la rama gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: build/web
+          force_orphan: true
+          commit_message: "Web v${{ needs.version.outputs.version }}"
+
+  android:
+    needs: version
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      MGD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      MGD_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: $FLUTTER_CREATE --platforms=android .
+      - name: Permiso de Internet, nombre y vuelta del inicio de sesión
+        run: |
+          python3 tool/patch_platforms.py android
+          cat android/app/src/main/AndroidManifest.xml
+      - name: Firma fija del APK
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::warning title=Sin firma fija::Faltan los Secrets ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD y ANDROID_KEY_ALIAS; se firma con una clave de prueba (para actualizar hay que desinstalar)."
+            exit 0
+          fi
+          printf "%s" "$KEYSTORE_B64" | tr -d " \r\n" | base64 -d > "$RUNNER_TEMP/mgd-release.jks"
+          echo "MGD_KEYSTORE_PATH=$RUNNER_TEMP/mgd-release.jks" >> "$GITHUB_ENV"
+          python3 tool/patch_platforms.py signing
+      - name: Compilar APK
+        run: |
+          flutter pub get
+          flutter build apk --release \
+            --build-name=${{ needs.version.outputs.number }} \
+            --build-number=${{ needs.version.outputs.code }} \
+            --dart-define=APP_VERSION=$VERSION \
+            --dart-define=WEB_CLIENT_SECRET=${{ secrets.WEB_CLIENT_SECRET }}
+          mkdir -p out
+          cp build/app/outputs/flutter-apk/app-release.apk "out/reproductor-v${VERSION}.apk"
+          "$ANDROID_HOME"/build-tools/$(ls "$ANDROID_HOME"/build-tools | sort -V | tail -1)/apksigner verify --print-certs "out/reproductor-v${VERSION}.apk" | grep -i "SHA-1" || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: out/*.apk
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter create --project-name reproductor --org com.luchorcompartidos --platforms=windows .
+      - name: Compilar .exe
+        shell: pwsh
+        env:
+          # el plugin de notificaciones usa una cabecera que MSVC nuevo marca como obsoleta
+          CL: /D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS
+        run: |
+          flutter pub get
+          flutter build windows --release `
+            --build-name=${{ needs.version.outputs.number }} `
+            --build-number=${{ needs.version.outputs.code }} `
+            --dart-define=APP_VERSION=$env:VERSION `
+            --dart-define=DESKTOP_CLIENT_SECRET=${{ secrets.DESKTOP_CLIENT_SECRET }}
+          New-Item -ItemType Directory -Force out | Out-Null
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath "out\reproductor-windows-v$env:VERSION.zip"
+      - name: Instalador (.exe)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress | Out-Null
+          }
+          & $iscc /Qp `
+            "/DAppVersion=${{ needs.version.outputs.number }}" `
+            "/DAppVersionFull=$env:VERSION" `
+            "/DSourceDir=$PWD\build\windows\x64\runner\Release" `
+            "/DOutputDir=$PWD\out" `
+            installer\reproductor.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup falló ($LASTEXITCODE)" }
+          Get-ChildItem out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            out/*.zip
+            out/*.exe
+
+  release:
+    needs: [version, android, windows]
+    if: needs.version.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Notas de la versión (commits desde la Release anterior)
+        run: |
+          prev=$(git tag --list 'v*' --sort=-v:refname | head -n1)
+          git log ${prev:+$prev..HEAD} --no-merges --pretty='- %s' \
+            | grep -v '\[skip ci\]' | sed -E 's/ *\[(patch|minor|major)\]//' > notas.md || true
+          [ -s notas.md ] || echo "- Compilación nueva" > notas.md
+          cat notas.md
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          pattern: "{android,windows}"
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.version.outputs.version }}
+          name: v${{ needs.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          body_path: notas.md
+          files: out/*

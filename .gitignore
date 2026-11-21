@@ -1,0 +1,19 @@
+# Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+pubspec.lock
+.metadata
+*.iml
+.idea/
+
+# Carpetas de plataforma: las genera "flutter create" en GitHub Actions
+/android/
+/ios/
+/linux/
+/macos/
+/windows/
+/web/
+/test/
