@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:http/http.dart' as http;
@@ -160,9 +161,13 @@ class _HomePageState extends State<HomePage> {
   String _explain(Object e) {
     final t = '$e';
     if (t.contains('invalid_client')) {
+      final android = defaultTargetPlatform == TargetPlatform.android;
+      final name = android ? 'WEB_CLIENT_SECRET (cliente Web)' : 'DESKTOP_CLIENT_SECRET (cliente Escritorio)';
       return 'Google rechazó el secreto del cliente de esta compilación. '
-          'Hay que corregir el Secret WEB_CLIENT_SECRET (Android) o '
-          'DESKTOP_CLIENT_SECRET (Windows) del repo y volver a compilar.';
+          'Hay que corregir el Secret $name del repo y volver a compilar.\n\n'
+          'Secreto en esta compilación: '
+          '${_secretHint(android ? Config.webClientSecret : Config.desktopClientSecret)}. '
+          'Comparalo con el final que muestra Google Cloud en "Secretos del cliente".';
     }
     if (t.contains('access_denied')) {
       return 'No se autorizó el acceso en Google. Volvé a intentarlo y aceptá '
@@ -473,6 +478,13 @@ class _Banner extends StatelessWidget {
         color: Theme.of(context).colorScheme.secondaryContainer,
         child: ListTile(leading: Icon(icon), title: Text(text)),
       );
+}
+
+/// Solo el final del secreto, para compararlo con Google Cloud sin mostrarlo entero.
+String _secretHint(String s) {
+  if (s.isEmpty) return 'vacío';
+  final end = s.length > 4 ? s.substring(s.length - 4) : s;
+  return 'termina en …$end (${s.length} caracteres)';
 }
 
 String _two(int n) => n.toString().padLeft(2, '0');
