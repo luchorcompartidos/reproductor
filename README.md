@@ -10,6 +10,12 @@ Basado en el núcleo de [multigdrive](https://github.com/luchorcompartidos/multi
 - "Probar acceso a la música": busca audios en cada cuenta.
 - Número de versión en el encabezado, Changelog y aviso de versión nueva.
 
+## E1 · v0.0.5 — Biblioteca
+- Lee solo carpetas y audio de todas las cuentas (Mi unidad y compartidos conmigo).
+- Vista por carpetas (cuenta → carpeta → canciones) y lista de todas las canciones.
+- Búsqueda por canción o carpeta, sin importar acentos.
+- Se actualiza leyendo solo los cambios (en Android y Windows el índice queda guardado).
+
 ## Plan
 E1 Biblioteca · E2 Reproducir · E3 Segundo plano · E4 Artista y álbum · E5 Listas · E6 Sin conexión (MVP).
 

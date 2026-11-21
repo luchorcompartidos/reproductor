@@ -208,6 +208,17 @@ class AccountIndex {
 
 /// Índices de todas las cuentas: los arma, los guarda y los carga.
 class IndexStore {
+  /// Reproductor: filtro de Drive (q) para indexar solo carpetas y audio.
+  final String? query;
+
+  /// Qué elementos conservar al aplicar cambios (null = todos).
+  final bool Function(DriveItem)? keep;
+
+  /// Prefijo del archivo guardado, para no mezclar con otros índices.
+  final String keyPrefix;
+
+  IndexStore({this.query, this.keep, this.keyPrefix = ''});
+
   final Map<String, AccountIndex> loaded = {};
   final Map<String, int> progress = {}; // email → archivos leídos (indexando)
 
@@ -217,7 +228,7 @@ class IndexStore {
     for (final e in emails) {
       if (loaded.containsKey(e)) continue;
       try {
-        final raw = await storage.loadIndex(e);
+        final raw = await storage.loadIndex('$keyPrefix$e');
         if (raw != null) loaded[e] = AccountIndex.fromJson(raw);
       } catch (_) {}
     }
@@ -225,12 +236,12 @@ class IndexStore {
 
   Future<void> save(String email) async {
     final idx = loaded[email];
-    if (idx != null) await storage.saveIndex(email, idx.toJson());
+    if (idx != null) await storage.saveIndex('$keyPrefix$email', idx.toJson());
   }
 
   Future<void> remove(String email) async {
     loaded.remove(email);
-    await storage.deleteIndex(email);
+    await storage.deleteIndex('$keyPrefix$email');
   }
 
   /// Recorre todo el Drive de la cuenta (solo metadatos) y guarda el índice.
@@ -257,6 +268,7 @@ class IndexStore {
             'spaces': 'drive',
             'corpora': 'user',
             'fields': 'nextPageToken,files($fileFields)',
+            if (query != null) 'q': query!,
             if (page != null) 'pageToken': page,
           }),
           token,
@@ -275,7 +287,7 @@ class IndexStore {
           date: DateTime.now(),
           items: items,
           changeToken: changeToken);
-      await storage.saveIndex(email, idx.toJson());
+      await storage.saveIndex('$keyPrefix$email', idx.toJson());
       loaded[email] = idx;
       return idx;
     } finally {
@@ -314,7 +326,12 @@ class IndexStore {
           if (m['removed'] == true || f == null) {
             idx.items.remove(id);
           } else {
-            idx.items[id] = DriveItem.fromApi(f);
+            final it = DriveItem.fromApi(f);
+            if (keep != null && !keep!(it)) {
+              idx.items.remove(id);
+            } else {
+              idx.items[id] = it;
+            }
           }
           changed++;
         }
@@ -330,7 +347,7 @@ class IndexStore {
       }
       idx.date = DateTime.now();
       if (changed > 0) idx.rebuild();
-      await storage.saveIndex(email, idx.toJson());
+      await storage.saveIndex('$keyPrefix$email', idx.toJson());
       return changed;
     } on Exception {
       return null;

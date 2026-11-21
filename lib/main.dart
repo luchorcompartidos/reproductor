@@ -10,6 +10,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'accounts.dart';
 import 'auth/auth.dart' as auth;
 import 'config.dart';
+import 'library.dart';
+import 'library_page.dart';
 import 'platform/platform.dart' as platform;
 import 'updates.dart';
 
@@ -55,6 +57,8 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   bool _busy = false;
+  int _tab = 0; // 0 = Biblioteca, 1 = Cuentas
+  late final Library _library = Library(store);
 
   /// Android: se abrió el navegador y se espera la vuelta de Google.
   bool _waiting = false;
@@ -93,6 +97,7 @@ class _HomePageState extends State<HomePage> {
       } else {
         await _refreshAll();
       }
+      await _library.start();
     });
     Updates.fetch().then((r) {
       if (mounted) setState(() => _releases = r);
@@ -102,6 +107,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     _sub?.cancel();
+    _library.dispose();
     super.dispose();
   }
 
@@ -132,7 +138,9 @@ class _HomePageState extends State<HomePage> {
     setState(() => _busy = true);
     try {
       final a = await store.addFromAuth(r);
-      _snack('Cuenta conectada: ${a.email}');
+      _snack('Cuenta conectada: ${a.email}. Leyendo su música…');
+      if (mounted) setState(() => _busy = false);
+      unawaited(_library.refresh(a));
     } catch (e) {
       _showError(e);
     } finally {
@@ -279,6 +287,7 @@ class _HomePageState extends State<HomePage> {
     if (ok != true) return;
     _probe.remove(a.email);
     await store.remove(a);
+    await _library.forget(a.email);
     if (mounted) setState(() {});
   }
 
@@ -335,8 +344,45 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final accounts = store.accounts;
     final newer = _newer;
+
+    final banners = <Widget>[
+      if (newer != null)
+        Card(
+          color: scheme.primaryContainer,
+          child: ListTile(
+            leading: const Icon(Icons.system_update),
+            title: Text('Hay una versión nueva (v${newer.version})'),
+            trailing: FilledButton(
+              onPressed: () => _openUpdate(newer),
+              child: Text(platform.installerExtension().isEmpty ? 'Recargar' : 'Descargar'),
+            ),
+          ),
+        ),
+      if (!auth.configOk())
+        const _Banner(
+          icon: Icons.warning_amber,
+          text: 'Faltan los datos de Google Cloud en esta compilación (Secrets del repo).',
+        ),
+      if (_waiting)
+        Card(
+          color: scheme.tertiaryContainer,
+          child: ListTile(
+            leading: const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 3),
+            ),
+            title: const Text('Esperando la autorización de Google…'),
+            subtitle: const Text('Completá los pasos en el navegador. Al terminar, '
+                'tocá "Volver al Reproductor" y la cuenta aparece acá.'),
+            trailing: TextButton(
+              onPressed: () => setState(() => _waiting = false),
+              child: const Text('Cancelar'),
+            ),
+          ),
+        ),
+    ];
 
     return Scaffold(
       appBar: AppBar(
@@ -344,8 +390,10 @@ class _HomePageState extends State<HomePage> {
         actions: [
           TextButton(onPressed: _showVersion, child: Text('v${Config.appVersion}')),
           IconButton(
-            tooltip: 'Revisar cuentas',
-            onPressed: _busy ? null : _refreshAll,
+            tooltip: _tab == 0 ? 'Actualizar la biblioteca' : 'Revisar cuentas',
+            onPressed: _busy
+                ? null
+                : (_tab == 0 ? () => _library.refreshAll() : _refreshAll),
             icon: const Icon(Icons.refresh),
           ),
         ],
@@ -354,117 +402,123 @@ class _HomePageState extends State<HomePage> {
           child: _busy ? const LinearProgressIndicator() : const SizedBox(height: 4),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _busy ? null : _addAccount,
-        icon: const Icon(Icons.person_add),
-        label: const Text('Agregar cuenta'),
+      floatingActionButton: _tab == 1
+          ? FloatingActionButton.extended(
+              onPressed: _busy ? null : _addAccount,
+              icon: const Icon(Icons.person_add),
+              label: const Text('Agregar cuenta'),
+            )
+          : null,
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _tab,
+        onDestinationSelected: (i) => setState(() => _tab = i),
+        destinations: const [
+          NavigationDestination(
+              icon: Icon(Icons.library_music_outlined),
+              selectedIcon: Icon(Icons.library_music),
+              label: 'Biblioteca'),
+          NavigationDestination(
+              icon: Icon(Icons.manage_accounts_outlined),
+              selectedIcon: Icon(Icons.manage_accounts),
+              label: 'Cuentas'),
+        ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (newer != null)
-            Card(
-              color: scheme.primaryContainer,
-              child: ListTile(
-                leading: const Icon(Icons.system_update),
-                title: Text('Hay una versión nueva (v${newer.version})'),
-                trailing: FilledButton(
-                  onPressed: () => _openUpdate(newer),
-                  child: Text(platform.installerExtension().isEmpty ? 'Recargar' : 'Descargar'),
-                ),
-              ),
+          if (banners.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              child: Column(children: banners),
             ),
-          if (!auth.configOk())
-            const _Banner(
-              icon: Icons.warning_amber,
-              text: 'Faltan los datos de Google Cloud en esta compilación (Secrets del repo).',
-            ),
-          if (auth.isWeb)
-            const _Banner(
-              icon: Icons.info_outline,
-              text: 'En la web el acceso de cada cuenta dura cerca de 1 hora; '
-                  'después usá "Volver a conectar".',
-            ),
-          if (_waiting)
-            Card(
-              color: scheme.tertiaryContainer,
-              child: ListTile(
-                leading: const SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 3),
-                ),
-                title: const Text('Esperando la autorización de Google…'),
-                subtitle: const Text('Completá los pasos en el navegador. Al terminar, '
-                    'tocá "Volver al Reproductor" y la cuenta aparece acá.'),
-                trailing: TextButton(
-                  onPressed: () => setState(() => _waiting = false),
-                  child: const Text('Cancelar'),
-                ),
-              ),
-            ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(4, 12, 4, 4),
-            child: Text('Cuentas de Google Drive (${accounts.length})',
-                style: Theme.of(context).textTheme.titleMedium),
-          ),
-          if (accounts.isEmpty)
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(20),
-                child: Text('Todavía no hay cuentas. Tocá "Agregar cuenta" para conectar '
-                    'la primera; podés sumar todas las que quieras.'),
-              ),
-            ),
-          for (final a in accounts)
-            Card(
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: Color(a.color),
-                  foregroundColor: Colors.white,
-                  child: Text(a.title.isEmpty ? '?' : a.title[0].toUpperCase()),
-                ),
-                title: Text(a.title),
-                subtitle: Text(
-                  a.error ?? _probe[a.email] ?? (a.nickname.isNotEmpty ? a.email : 'Conectada'),
-                  style: a.error == null ? null : TextStyle(color: scheme.error),
-                ),
-                onTap: _busy ? null : () => _probeMusic(a),
-                trailing: PopupMenuButton<String>(
-                  onSelected: (v) {
-                    switch (v) {
-                      case 'probe':
-                        _probeMusic(a);
-                      case 'alias':
-                        _rename(a);
-                      case 'reconnect':
-                        _addAccount();
-                      case 'remove':
-                        _remove(a);
-                    }
-                  },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'probe', child: Text('Probar acceso a la música')),
-                    PopupMenuItem(value: 'alias', child: Text('Cambiar alias')),
-                    PopupMenuItem(value: 'reconnect', child: Text('Volver a conectar')),
-                    PopupMenuItem(value: 'remove', child: Text('Quitar')),
-                  ],
-                ),
-              ),
-            ),
-          const SizedBox(height: 12),
-          Card(
-            color: scheme.surfaceContainerHighest,
-            child: const ListTile(
-              leading: Icon(Icons.library_music_outlined),
-              title: Text('Biblioteca'),
-              subtitle: Text('Próxima entrega (E1): índice de la música de todas las cuentas, '
-                  'por carpeta, con búsqueda.'),
-            ),
+          Expanded(
+            child: _tab == 0 ? LibraryView(library: _library) : _accountsView(scheme),
           ),
         ],
       ),
     );
+  }
+
+  Widget _accountsView(ColorScheme scheme) {
+    return AnimatedBuilder(
+      animation: _library,
+      builder: (context, _) {
+        final accounts = store.accounts;
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
+          children: [
+            if (auth.isWeb)
+              const _Banner(
+                icon: Icons.info_outline,
+                text: 'En la web el acceso de cada cuenta dura cerca de 1 hora; '
+                    'después usá "Volver a conectar".',
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
+              child: Text('Cuentas de Google Drive (${accounts.length})',
+                  style: Theme.of(context).textTheme.titleMedium),
+            ),
+            if (accounts.isEmpty)
+              const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Text('Todavía no hay cuentas. Tocá "Agregar cuenta" para conectar '
+                      'la primera; podés sumar todas las que quieras.'),
+                ),
+              ),
+            for (final a in accounts)
+              Card(
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: Color(a.color),
+                    foregroundColor: Colors.white,
+                    child: Text(a.title.isEmpty ? '?' : a.title[0].toUpperCase()),
+                  ),
+                  title: Text(a.title),
+                  subtitle: Text(
+                    a.error ?? _probe[a.email] ?? _accountInfo(a),
+                    style: a.error == null ? null : TextStyle(color: scheme.error),
+                  ),
+                  onTap: _busy ? null : () => _probeMusic(a),
+                  trailing: PopupMenuButton<String>(
+                    onSelected: (v) {
+                      switch (v) {
+                        case 'probe':
+                          _probeMusic(a);
+                        case 'reread':
+                          _library.rebuild(a);
+                        case 'alias':
+                          _rename(a);
+                        case 'reconnect':
+                          _addAccount();
+                        case 'remove':
+                          _remove(a);
+                      }
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'probe', child: Text('Probar acceso a la música')),
+                      PopupMenuItem(value: 'reread', child: Text('Volver a leer su música')),
+                      PopupMenuItem(value: 'alias', child: Text('Cambiar alias')),
+                      PopupMenuItem(value: 'reconnect', child: Text('Volver a conectar')),
+                      PopupMenuItem(value: 'remove', child: Text('Quitar')),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  String _accountInfo(Account a) {
+    final prefix = a.nickname.isNotEmpty ? '${a.email} · ' : '';
+    final p = _library.progressOf(a);
+    if (p != null) return '${prefix}Leyendo su música… $p elementos';
+    final e = _library.errors[a.email];
+    if (e != null) return '$prefix$e';
+    if (_library.indexOf(a) == null) return '${prefix}Conectada';
+    return '$prefix${_library.countFor(a)} canciones';
   }
 }
 
