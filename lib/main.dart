@@ -54,6 +54,9 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   bool _busy = false;
+
+  /// Android: se abrió el navegador y se espera la vuelta de Google.
+  bool _waiting = false;
   StreamSubscription<auth.AuthResult>? _sub;
   List<ReleaseInfo> _releases = [];
 
@@ -73,19 +76,19 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     // Android: la cuenta vuelve desde el navegador.
     _sub = auth.authResults.listen(
-      (r) => _run(() async {
-        final a = await store.addFromAuth(r);
-        _snack('Cuenta conectada: ${a.email}');
-      }),
-      onError: (Object e) => _snack('Error: $e'),
+      (r) {
+        setState(() => _waiting = false);
+        _connect(r);
+      },
+      onError: (Object e) {
+        setState(() => _waiting = false);
+        _showError(e);
+      },
     );
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final p = widget.pending;
       if (p != null) {
-        await _run(() async {
-          final a = await store.addFromAuth(p);
-          _snack('Cuenta conectada: ${a.email}');
-        });
+        await _connect(p);
       } else {
         await _refreshAll();
       }
@@ -123,13 +126,86 @@ class _HomePageState extends State<HomePage> {
         }
       });
 
-  Future<void> _addAccount() => _run(() async {
-        final r = await auth.signInNewAccount();
-        if (r != null) {
-          final a = await store.addFromAuth(r);
-          _snack('Cuenta conectada: ${a.email}');
-        }
-      });
+  /// Agrega la cuenta que volvió de Google; si falla, lo explica en un cartel.
+  Future<void> _connect(auth.AuthResult r) async {
+    setState(() => _busy = true);
+    try {
+      final a = await store.addFromAuth(r);
+      _snack('Cuenta conectada: ${a.email}');
+    } catch (e) {
+      _showError(e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _addAccount() async {
+    setState(() => _busy = true);
+    try {
+      final r = await auth.signInNewAccount();
+      if (r != null) {
+        await _connect(r);
+      } else if (!auth.isWeb) {
+        // Android: la cuenta llega después, cuando el navegador vuelve a la app.
+        setState(() => _waiting = true);
+      }
+    } catch (e) {
+      _showError(e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Traduce los errores conocidos de Google a una explicación clara.
+  String _explain(Object e) {
+    final t = '$e';
+    if (t.contains('invalid_client')) {
+      return 'Google rechazó el secreto del cliente de esta compilación. '
+          'Hay que corregir el Secret WEB_CLIENT_SECRET (Android) o '
+          'DESKTOP_CLIENT_SECRET (Windows) del repo y volver a compilar.';
+    }
+    if (t.contains('access_denied')) {
+      return 'No se autorizó el acceso en Google. Volvé a intentarlo y aceptá '
+          'al menos el permiso para ver y descargar los archivos de Drive.';
+    }
+    if (t.contains('invalid_grant')) {
+      return 'La autorización venció o ya se había usado. Tocá "Agregar cuenta" otra vez.';
+    }
+    if (e is NeedsReconnect) {
+      return 'Hay que volver a conectar esta cuenta.';
+    }
+    if (t.contains('403')) {
+      return 'Google no dio permiso para leer los archivos de Drive. Volvé a conectar '
+          'la cuenta y aceptá el permiso para ver y descargar los archivos.';
+    }
+    return 'No se pudo conectar la cuenta.';
+  }
+
+  void _showError(Object e) {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: Icon(Icons.error_outline, color: Theme.of(ctx).colorScheme.error),
+        title: const Text('No se pudo conectar'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(_explain(e)),
+              const SizedBox(height: 12),
+              Text('Detalle técnico:', style: Theme.of(ctx).textTheme.labelMedium),
+              SelectableText('$e', style: Theme.of(ctx).textTheme.bodySmall),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cerrar')),
+        ],
+      ),
+    );
+  }
 
   /// Prueba de E0: busca hasta 100 audios en la cuenta (Mi unidad y compartidos conmigo).
   Future<void> _probeMusic(Account a) => _run(() async {
@@ -303,6 +379,24 @@ class _HomePageState extends State<HomePage> {
               icon: Icons.info_outline,
               text: 'En la web el acceso de cada cuenta dura cerca de 1 hora; '
                   'después usá "Volver a conectar".',
+            ),
+          if (_waiting)
+            Card(
+              color: scheme.tertiaryContainer,
+              child: ListTile(
+                leading: const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 3),
+                ),
+                title: const Text('Esperando la autorización de Google…'),
+                subtitle: const Text('Completá los pasos en el navegador. Al terminar, '
+                    'tocá "Volver al Reproductor" y la cuenta aparece acá.'),
+                trailing: TextButton(
+                  onPressed: () => setState(() => _waiting = false),
+                  child: const Text('Cancelar'),
+                ),
+              ),
             ),
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 12, 4, 4),
