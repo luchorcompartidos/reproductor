@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'accounts.dart';
 import 'drive_index.dart';
 import 'library.dart';
+import 'player.dart';
 
 int _byName(DriveItem a, DriveItem b) => normalize(a.name).compareTo(normalize(b.name));
 
@@ -17,7 +18,8 @@ String _date(DateTime d) {
 /// Pestaña Biblioteca: búsqueda, vista por carpetas y lista de todas las canciones.
 class LibraryView extends StatefulWidget {
   final Library library;
-  const LibraryView({super.key, required this.library});
+  final PlayerController player;
+  const LibraryView({super.key, required this.library, required this.player});
 
   @override
   State<LibraryView> createState() => _LibraryViewState();
@@ -74,13 +76,18 @@ class _LibraryViewState extends State<LibraryView> {
                   itemCount: list.length + 1,
                   itemBuilder: (context, i) {
                     if (i == 0) {
-                      return Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                        child: Text('${list.length} canciones',
-                            style: Theme.of(context).textTheme.labelLarge),
+                      return _PlayBar(
+                        count: list.length,
+                        onPlay: () => widget.player.playList(list, 0),
+                        onShuffle: () => widget.player.playShuffled(list),
                       );
                     }
-                    return TrackTile(library: lib, track: list[i - 1], showAccount: true);
+                    return TrackTile(
+                      library: lib,
+                      track: list[i - 1],
+                      showAccount: true,
+                      onPlay: () => widget.player.playList(list, i - 1),
+                    );
                   },
                 );
         } else {
@@ -104,8 +111,11 @@ class _LibraryViewState extends State<LibraryView> {
                       : () => Navigator.push(
                             context,
                             MaterialPageRoute<void>(
-                                builder: (_) =>
-                                    FolderPage(library: lib, account: a, folderId: null)),
+                                builder: (_) => FolderPage(
+                                    library: lib,
+                                    player: widget.player,
+                                    account: a,
+                                    folderId: null)),
                           ),
                 ),
             ],
@@ -169,9 +179,31 @@ class _LibraryViewState extends State<LibraryView> {
 /// Una carpeta de una cuenta (folderId null = las dos de arriba de todo).
 class FolderPage extends StatelessWidget {
   final Library library;
+  final PlayerController player;
   final Account account;
   final String? folderId;
-  const FolderPage({super.key, required this.library, required this.account, this.folderId});
+  const FolderPage(
+      {super.key,
+      required this.library,
+      required this.player,
+      required this.account,
+      this.folderId});
+
+  /// Todas las canciones de esta carpeta y sus subcarpetas, ordenadas por ruta y nombre.
+  List<Track> _allSongs(AccountIndex idx) {
+    final ids = folderId == null
+        ? [...idx.descendants(idx.rootId), ...idx.descendants(otherId)]
+        : idx.descendants(folderId!);
+    final out = <({String key, Track track})>[];
+    for (final id in ids) {
+      final it = idx.items[id];
+      if (it == null || !isAudioItem(it)) continue;
+      final t = library.trackFor(account, it);
+      out.add((key: normalize('${library.pathOf(t)}/${it.name}'), track: t));
+    }
+    out.sort((a, b) => a.key.compareTo(b.key));
+    return [for (final e in out) e.track];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -191,6 +223,7 @@ class FolderPage extends StatelessWidget {
             : List<DriveItem>.of(idx.children[id] ?? const <DriveItem>[]);
         final folders = entries.where((e) => e.isFolder && e.files > 0).toList()..sort(_byName);
         final songs = entries.where(isAudioItem).toList()..sort(_byName);
+        final songTracks = [for (final s in songs) library.trackFor(account, s)];
         final title = id == null ? account.title : (idx.items[id]?.name ?? '');
         final path = id == null
             ? account.email
@@ -208,6 +241,18 @@ class FolderPage extends StatelessWidget {
                     style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
+            actions: [
+              IconButton(
+                tooltip: 'Reproducir todo (con subcarpetas)',
+                icon: const Icon(Icons.play_arrow),
+                onPressed: () => player.playList(_allSongs(idx), 0),
+              ),
+              IconButton(
+                tooltip: 'Aleatorio (con subcarpetas)',
+                icon: const Icon(Icons.shuffle),
+                onPressed: () => player.playShuffled(_allSongs(idx)),
+              ),
+            ],
           ),
           body: (folders.isEmpty && songs.isEmpty)
               ? const _Empty(text: 'No hay canciones en esta carpeta.')
@@ -223,16 +268,21 @@ class FolderPage extends StatelessWidget {
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute<void>(
-                              builder: (_) =>
-                                  FolderPage(library: library, account: account, folderId: f.id)),
+                              builder: (_) => FolderPage(
+                                  library: library,
+                                  player: player,
+                                  account: account,
+                                  folderId: f.id)),
                         ),
                       ),
                     if (folders.isNotEmpty && songs.isNotEmpty) const Divider(),
-                    for (final s in songs)
+                    for (var i = 0; i < songTracks.length; i++)
                       TrackTile(
-                          library: library,
-                          track: library.trackFor(account, s),
-                          showAccount: false),
+                        library: library,
+                        track: songTracks[i],
+                        showAccount: false,
+                        onPlay: () => player.playList(songTracks, i),
+                      ),
                   ],
                 ),
         );
@@ -245,8 +295,13 @@ class TrackTile extends StatelessWidget {
   final Library library;
   final Track track;
   final bool showAccount;
+  final VoidCallback onPlay;
   const TrackTile(
-      {super.key, required this.library, required this.track, required this.showAccount});
+      {super.key,
+      required this.library,
+      required this.track,
+      required this.showAccount,
+      required this.onPlay});
 
   @override
   Widget build(BuildContext context) {
@@ -268,13 +323,19 @@ class TrackTile extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      onTap: () => showTrackSheet(context, library, track),
+      onTap: onPlay,
+      onLongPress: () => showTrackSheet(context, library, track, onPlay: onPlay),
+      trailing: IconButton(
+        tooltip: 'Detalle',
+        icon: const Icon(Icons.info_outline),
+        onPressed: () => showTrackSheet(context, library, track, onPlay: onPlay),
+      ),
     );
   }
 }
 
-/// Detalle de una canción (la reproducción llega en E2).
-void showTrackSheet(BuildContext context, Library library, Track t) {
+/// Detalle de una canción.
+void showTrackSheet(BuildContext context, Library library, Track t, {VoidCallback? onPlay}) {
   final it = t.item;
   showModalBottomSheet<void>(
     context: context,
@@ -294,8 +355,19 @@ void showTrackSheet(BuildContext context, Library library, Track t) {
             _Row(label: 'Formato', value: '${trackFormat(it)} · ${formatBytes(it.size)}'),
             if (it.modified > 0) _Row(label: 'Modificado', value: _date(it.modifiedAt)),
             const SizedBox(height: 12),
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
+                if (onPlay != null)
+                  FilledButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      onPlay();
+                    },
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('Reproducir'),
+                  ),
                 FilledButton.tonalIcon(
                   onPressed: () => launchUrl(
                       Uri.parse('https://drive.google.com/file/d/${it.id}/view'),
@@ -305,14 +377,31 @@ void showTrackSheet(BuildContext context, Library library, Track t) {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            Text('La reproducción llega en la próxima entrega (E2).',
-                style: Theme.of(ctx).textTheme.bodySmall),
           ],
         ),
       ),
     ),
   );
+}
+
+class _PlayBar extends StatelessWidget {
+  final int count;
+  final VoidCallback onPlay;
+  final VoidCallback onShuffle;
+  const _PlayBar({required this.count, required this.onPlay, required this.onShuffle});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 8, 0),
+        child: Row(children: [
+          Expanded(
+              child: Text('$count canciones', style: Theme.of(context).textTheme.labelLarge)),
+          TextButton.icon(
+              onPressed: onPlay, icon: const Icon(Icons.play_arrow), label: const Text('Todo')),
+          TextButton.icon(
+              onPressed: onShuffle, icon: const Icon(Icons.shuffle), label: const Text('Aleatorio')),
+        ]),
+      );
 }
 
 class _Row extends StatelessWidget {

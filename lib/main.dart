@@ -12,6 +12,8 @@ import 'auth/auth.dart' as auth;
 import 'config.dart';
 import 'library.dart';
 import 'library_page.dart';
+import 'player.dart';
+import 'player_page.dart';
 import 'platform/platform.dart' as platform;
 import 'updates.dart';
 
@@ -59,6 +61,7 @@ class _HomePageState extends State<HomePage> {
   bool _busy = false;
   int _tab = 0; // 0 = Biblioteca, 1 = Cuentas
   late final Library _library = Library(store);
+  late final PlayerController _player = PlayerController(_library);
 
   /// Android: se abrió el navegador y se espera la vuelta de Google.
   bool _waiting = false;
@@ -107,6 +110,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     _sub?.cancel();
+    _player.dispose();
     _library.dispose();
     super.dispose();
   }
@@ -286,6 +290,7 @@ class _HomePageState extends State<HomePage> {
     );
     if (ok != true) return;
     _probe.remove(a.email);
+    if (_player.current?.account.email == a.email) await _player.stop();
     await store.remove(a);
     await _library.forget(a.email);
     if (mounted) setState(() {});
@@ -409,7 +414,11 @@ class _HomePageState extends State<HomePage> {
               label: const Text('Agregar cuenta'),
             )
           : null,
-      bottomNavigationBar: NavigationBar(
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          MiniPlayer(player: _player),
+          NavigationBar(
         selectedIndex: _tab,
         onDestinationSelected: (i) => setState(() => _tab = i),
         destinations: const [
@@ -423,6 +432,8 @@ class _HomePageState extends State<HomePage> {
               label: 'Cuentas'),
         ],
       ),
+        ],
+      ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -432,7 +443,7 @@ class _HomePageState extends State<HomePage> {
               child: Column(children: banners),
             ),
           Expanded(
-            child: _tab == 0 ? LibraryView(library: _library) : _accountsView(scheme),
+            child: _tab == 0 ? LibraryView(library: _library, player: _player) : _accountsView(scheme),
           ),
         ],
       ),

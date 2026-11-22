@@ -26,6 +26,10 @@ def android():
     import re
     s = re.sub(r'android:label="[^"]*"', 'android:label="Reproductor"', s, count=1)
     open(m, "w", encoding="utf-8").write(s)
+    s = open(m, encoding="utf-8").read()
+    if "usesCleartextTraffic" not in s:
+        # just_audio usa un proxy local (http://127.0.0.1) para mandar el token a Drive
+        patch(m, "<application", '<application android:usesCleartextTraffic="true"')
     desugar()
     # Vuelta del inicio de sesión: com.luchorcompartidos.reproductor://oauth
     patch(m, "</activity>", f"""    <meta-data android:name="flutter_deeplinking_enabled" android:value="false" />

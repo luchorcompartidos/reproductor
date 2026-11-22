@@ -16,6 +16,11 @@ Basado en el núcleo de [multigdrive](https://github.com/luchorcompartidos/multi
 - Búsqueda por canción o carpeta, sin importar acentos.
 - Se actualiza leyendo solo los cambios (en Android y Windows el índice queda guardado).
 
+## E2 · v0.0.6 — Reproducir
+- Toca una canción para escucharla; "Todo" y "Aleatorio" en la lista y en cada carpeta (con subcarpetas).
+- Barra de reproducción abajo y pantalla completa con avance, anterior/siguiente, aleatorio, repetir y cola.
+- Android y Windows: streaming desde Drive. Web: descarga la canción completa y después suena.
+
 ## Plan
 E1 Biblioteca · E2 Reproducir · E3 Segundo plano · E4 Artista y álbum · E5 Listas · E6 Sin conexión (MVP).
 
