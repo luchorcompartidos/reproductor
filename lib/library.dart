@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'accounts.dart';
 import 'drive_index.dart';
+import 'offline.dart';
 import 'playlists.dart';
 import 'tag_store.dart';
 import 'tags.dart';
@@ -110,6 +111,14 @@ class Library extends ChangeNotifier {
 
   /// Listas de reproducción (se asigna al iniciar la app).
   PlaylistStore? lists;
+
+  /// Descargas sin conexión (se asigna al iniciar la app).
+  OfflineStore? offline;
+
+  void attachOffline(OfflineStore o) {
+    offline = o;
+    o.addListener(notifyListeners);
+  }
   final Map<String, String> errors = {};
   final Set<String> _running = {}; // cuentas que se están leyendo ahora
   List<Track>? _tracks;

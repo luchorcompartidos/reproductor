@@ -41,6 +41,12 @@ Basado en el núcleo de [multigdrive](https://github.com/luchorcompartidos/multi
   + copia visible "Reproductor - listas (respaldo).json" en Mi unidad. Gana la versión más nueva de cada lista.
 - La cuenta principal se elige en Cuentas → ⋮ → "Guardar las listas en esta cuenta".
 
+## E6 · v0.0.10 — Sin conexión (MVP completo)
+- Descargar una canción (detalle) o todo un álbum, artista, carpeta o lista (botón de descarga arriba).
+- Si está descargada, suena el archivo del equipo (no hace falta conexión).
+- Pantalla Descargas: espacio usado, cola con cancelar, reproducir y quitar (una o todas).
+- Android y Windows. En la web no se guardan canciones.
+
 ## Plan
 E1 Biblioteca · E2 Reproducir · E3 Segundo plano · E4 Artista y álbum · E5 Listas · E6 Sin conexión (MVP).
 

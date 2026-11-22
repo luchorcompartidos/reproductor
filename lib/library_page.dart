@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'accounts.dart';
 import 'drive_index.dart';
 import 'library.dart';
+import 'offline_page.dart';
 import 'player.dart';
 import 'playlists_page.dart';
 
@@ -307,6 +308,7 @@ class FolderPage extends StatelessWidget {
                   icon: const Icon(Icons.playlist_add),
                   onPressed: () => addToPlaylist(context, library.lists!, _allSongs(idx)),
                 ),
+              ...[downloadAllButton(context, library, _allSongs(idx))].whereType<Widget>(),
             ],
           ),
           body: (folders.isEmpty && songs.isEmpty)
@@ -389,11 +391,14 @@ class TrackTile extends StatelessWidget {
       ),
       onTap: onPlay,
       onLongPress: () => showTrackSheet(context, library, track, onPlay: onPlay),
-      trailing: IconButton(
-        tooltip: 'Detalle',
-        icon: const Icon(Icons.info_outline),
-        onPressed: () => showTrackSheet(context, library, track, onPlay: onPlay),
-      ),
+      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+        OfflineBadge(library: library, track: track),
+        IconButton(
+          tooltip: 'Detalle',
+          icon: const Icon(Icons.info_outline),
+          onPressed: () => showTrackSheet(context, library, track, onPlay: onPlay),
+        ),
+      ]),
     );
   }
 }
@@ -451,6 +456,24 @@ void showTrackSheet(BuildContext context, Library library, Track t, {VoidCallbac
                     icon: const Icon(Icons.playlist_add),
                     label: const Text('Agregar a lista'),
                   ),
+                if (library.offline?.supported == true)
+                  library.offline!.isDownloaded(t)
+                      ? FilledButton.tonalIcon(
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            library.offline!.remove(t);
+                          },
+                          icon: const Icon(Icons.delete_outline),
+                          label: const Text('Quitar descarga'),
+                        )
+                      : FilledButton.tonalIcon(
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            library.offline!.enqueue([t]);
+                          },
+                          icon: const Icon(Icons.download_for_offline_outlined),
+                          label: const Text('Descargar'),
+                        ),
                 FilledButton.tonalIcon(
                   onPressed: () => launchUrl(
                       Uri.parse('https://drive.google.com/file/d/${it.id}/view'),
@@ -577,6 +600,7 @@ class ArtistPage extends StatelessWidget {
                       ? null
                       : () => addToPlaylist(context, library.lists!, tracks),
                 ),
+              ...[downloadAllButton(context, library, tracks)].whereType<Widget>(),
             ],
           ),
           body: ar == null
@@ -625,6 +649,7 @@ class AlbumPage extends StatelessWidget {
                   icon: const Icon(Icons.playlist_add),
                   onPressed: () => addToPlaylist(context, library.lists!, tracks),
                 ),
+              ...[downloadAllButton(context, library, tracks)].whereType<Widget>(),
             ],
           ),
           body: ListView(

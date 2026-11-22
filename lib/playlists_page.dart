@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'library.dart';
 import 'library_page.dart';
+import 'offline_page.dart';
 import 'player.dart';
 import 'playlists.dart';
 
@@ -220,6 +221,7 @@ class PlaylistPage extends StatelessWidget {
                 icon: const Icon(Icons.shuffle),
                 onPressed: playable.isEmpty ? null : () => player.playShuffled(playable),
               ),
+              ...[downloadAllButton(context, library, playable)].whereType<Widget>(),
               PopupMenuButton<String>(
                 onSelected: (v) async {
                   if (v == 'rename') {

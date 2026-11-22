@@ -31,6 +31,7 @@ class PlayerController extends ChangeNotifier {
   StreamSubscription<PlaybackEvent>? _eventSub;
   DateTime _loadedAt = DateTime.fromMillisecondsSinceEpoch(0);
   bool _retried = false; // un reintento con acceso nuevo si falla la conexión
+  bool _local = false; // la canción actual suena desde una descarga
 
   bool shuffle = false;
   Repeat repeat = Repeat.off;
@@ -124,6 +125,7 @@ class PlayerController extends ChangeNotifier {
     // Sin fuente cargada, o cargada hace mucho (el acceso a Drive dura ~1 hora):
     // se vuelve a cargar con acceso nuevo desde el mismo punto.
     final stale = !kIsWeb &&
+        !_local &&
         DateTime.now().difference(_loadedAt) > const Duration(minutes: 45);
     if (_player.processingState == ProcessingState.idle || stale) {
       await _load(at: _player.position);
@@ -229,6 +231,19 @@ class PlayerController extends ChangeNotifier {
     try {
       // Sin stop(): así el servicio de segundo plano no se corta entre canciones.
       await _player.pause();
+      // Descargada: suena el archivo del equipo (no hace falta conexión).
+      final local = kIsWeb ? null : library.offline?.localPath(t);
+      if (local != null) {
+        await _player.setAudioSource(AudioSource.file(local), initialPosition: at);
+        if (seq != _seq) return;
+        _local = true;
+        _loadedAt = DateTime.now();
+        loading = false;
+        notifyListeners();
+        unawaited(_player.play());
+        return;
+      }
+      _local = false;
       final token = await library.store.tokenFor(t.account);
       if (seq != _seq) return;
       final url = Uri.parse(

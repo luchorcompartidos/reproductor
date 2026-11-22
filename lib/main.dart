@@ -13,6 +13,8 @@ import 'auth/auth.dart' as auth;
 import 'config.dart';
 import 'library.dart';
 import 'library_page.dart';
+import 'offline.dart';
+import 'offline_page.dart';
 import 'player.dart';
 import 'player_page.dart';
 import 'playlists.dart';
@@ -33,6 +35,9 @@ Future<void> main() async {
   final lists = PlaylistStore(store);
   await lists.load();
   library.lists = lists;
+  final offline = OfflineStore(store);
+  await offline.load();
+  library.attachOffline(offline);
   await setupBackgroundAudio(player);
   runApp(ReproductorApp(
       store: store, library: library, player: player, lists: lists, pending: pending));
@@ -321,6 +326,7 @@ class _HomePageState extends State<HomePage> {
     if (ok != true) return;
     _probe.remove(a.email);
     if (_player.current?.account.email == a.email) await _player.stop();
+    await _library.offline?.removeAccount(a.email);
     await store.remove(a);
     await _library.forget(a.email);
     if (mounted) setState(() {});
@@ -424,6 +430,16 @@ class _HomePageState extends State<HomePage> {
         title: const Text(Config.appName),
         actions: [
           TextButton(onPressed: _showVersion, child: Text('v${Config.appVersion}')),
+          if (_library.offline?.supported == true)
+            IconButton(
+              tooltip: 'Descargas',
+              icon: const Icon(Icons.download_for_offline_outlined),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                    builder: (_) => DownloadsPage(library: _library, player: _player)),
+              ),
+            ),
           IconButton(
             tooltip: switch (_tab) {
               0 => 'Actualizar la biblioteca',
