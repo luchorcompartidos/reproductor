@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -28,7 +30,7 @@ class LibraryView extends StatefulWidget {
 class _LibraryViewState extends State<LibraryView> {
   final _search = TextEditingController();
   String _query = '';
-  int _mode = 0; // 0 = carpetas, 1 = todas las canciones
+  int _mode = 0; // 0 = carpetas, 1 = artistas, 2 = álbumes, 3 = todas
 
   @override
   void dispose() {
@@ -57,6 +59,13 @@ class _LibraryViewState extends State<LibraryView> {
                 icon: Icon(Icons.error_outline, size: 18, color: Theme.of(context).colorScheme.error),
                 text: '${a.title}: ${lib.errors[a.email]}',
               ),
+          if (lib.tags.running && lib.tags.total > 0)
+            _StatusLine(
+              icon: const SizedBox(
+                  width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+              text: 'Leyendo artistas, álbumes y carátulas… '
+                  '${lib.tags.done} de ${lib.tags.total}',
+            ),
         ];
 
         Widget content;
@@ -64,7 +73,7 @@ class _LibraryViewState extends State<LibraryView> {
           content = const _Empty(
               text: 'Todavía no hay cuentas. Conectá una en la pestaña "Cuentas" '
                   'y su música aparece acá.');
-        } else if (searching || _mode == 1) {
+        } else if (searching || _mode == 3) {
           final list = searching ? lib.search(_query) : lib.tracks;
           content = list.isEmpty
               ? _Empty(
@@ -89,6 +98,44 @@ class _LibraryViewState extends State<LibraryView> {
                       onPlay: () => widget.player.playList(list, i - 1),
                     );
                   },
+                );
+        } else if (_mode == 1) {
+          final artists = lib.artists;
+          content = artists.isEmpty
+              ? const _Empty(text: 'Todavía no hay artistas.')
+              : ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 24),
+                  itemCount: artists.length,
+                  itemBuilder: (context, i) {
+                    final ar = artists[i];
+                    final cover = ar.albums
+                        .map((a) => a.coverTrack)
+                        .whereType<Track>()
+                        .firstOrNull;
+                    return ListTile(
+                      leading: CoverImage(library: lib, track: cover, size: 48, round: true),
+                      title: Text(ar.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text('${ar.albums.length} '
+                          '${ar.albums.length == 1 ? 'álbum' : 'álbumes'} · '
+                          '${ar.songCount} ${ar.songCount == 1 ? 'canción' : 'canciones'}'),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute<void>(
+                            builder: (_) => ArtistPage(
+                                library: lib, player: widget.player, name: ar.name)),
+                      ),
+                    );
+                  },
+                );
+        } else if (_mode == 2) {
+          final albums = lib.albums;
+          content = albums.isEmpty
+              ? const _Empty(text: 'Todavía no hay álbumes.')
+              : ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 24),
+                  itemCount: albums.length,
+                  itemBuilder: (context, i) =>
+                      AlbumTile(library: lib, player: widget.player, album: albums[i]),
                 );
         } else {
           content = ListView(
@@ -131,7 +178,7 @@ class _LibraryViewState extends State<LibraryView> {
                 controller: _search,
                 onChanged: (v) => setState(() => _query = v),
                 decoration: InputDecoration(
-                  hintText: 'Buscar canción o carpeta',
+                  hintText: 'Buscar canción, artista, álbum o carpeta',
                   prefixIcon: const Icon(Icons.search),
                   border: const OutlineInputBorder(),
                   isDense: true,
@@ -152,11 +199,12 @@ class _LibraryViewState extends State<LibraryView> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
                 child: SegmentedButton<int>(
+                  showSelectedIcon: false,
                   segments: const [
-                    ButtonSegment(
-                        value: 0, icon: Icon(Icons.folder_outlined), label: Text('Carpetas')),
-                    ButtonSegment(
-                        value: 1, icon: Icon(Icons.queue_music), label: Text('Todas')),
+                    ButtonSegment(value: 0, label: Text('Carpetas')),
+                    ButtonSegment(value: 1, label: Text('Artistas')),
+                    ButtonSegment(value: 2, label: Text('Álbumes')),
+                    ButtonSegment(value: 3, label: Text('Todas')),
                   ],
                   selected: {_mode},
                   onSelectionChanged: (s) => setState(() => _mode = s.first),
@@ -296,30 +344,39 @@ class TrackTile extends StatelessWidget {
   final Track track;
   final bool showAccount;
   final VoidCallback onPlay;
+
+  /// Dentro de un álbum: número de pista en lugar de la carátula.
+  final bool hideCover;
   const TrackTile(
       {super.key,
       required this.library,
       required this.track,
       required this.showAccount,
-      required this.onPlay});
+      required this.onPlay,
+      this.hideCover = false});
 
   @override
   Widget build(BuildContext context) {
     final it = track.item;
     final details = '${trackFormat(it)} · ${formatBytes(it.size)}';
+    final hasArtist = track.tag?.artist != null || track.tag?.albumArtist != null;
+    final number = track.tag?.track;
     return ListTile(
       leading: showAccount
-          ? CircleAvatar(
-              radius: 16,
-              backgroundColor: Color(track.account.color),
-              child: const Icon(Icons.music_note, size: 18, color: Colors.white),
-            )
-          : const Icon(Icons.music_note_outlined),
+          ? CoverImage(library: library, track: track, size: 40)
+          : (number != null && !showAccount && hideCover
+              ? SizedBox(
+                  width: 32,
+                  child: Text('$number',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.titleMedium),
+                )
+              : CoverImage(library: library, track: track, size: 40)),
       title: Text(track.title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
         showAccount
-            ? '${track.folder.isEmpty ? track.account.title : track.folder} · ${track.account.title}'
-            : details,
+            ? '${track.artist} · ${track.album}'
+            : (hasArtist && !hideCover ? '${track.artist} · $details' : details),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -347,8 +404,18 @@ void showTrackSheet(BuildContext context, Library library, Track t, {VoidCallbac
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(t.title, style: Theme.of(ctx).textTheme.titleLarge),
+            Row(children: [
+              CoverImage(library: library, track: t, size: 72),
+              const SizedBox(width: 16),
+              Expanded(child: Text(t.title, style: Theme.of(ctx).textTheme.titleLarge)),
+            ]),
             const SizedBox(height: 12),
+            if (t.tag != null) ...[
+              _Row(label: 'Artista', value: t.artist),
+              _Row(label: 'Álbum', value: t.album),
+              if (t.tag?.year != null) _Row(label: 'Año', value: t.tag!.year!),
+              if (t.tag?.track != null) _Row(label: 'Pista', value: '${t.tag!.track}'),
+            ],
             _Row(label: 'Cuenta', value: '${t.account.title} (${t.account.email})'),
             _Row(label: 'Carpeta', value: library.pathOf(t)),
             _Row(label: 'Archivo', value: it.name),
@@ -382,6 +449,201 @@ void showTrackSheet(BuildContext context, Library library, Track t, {VoidCallbac
       ),
     ),
   );
+}
+
+/// Carátula de la canción (o un ícono con el color de la cuenta si no tiene).
+class CoverImage extends StatelessWidget {
+  final Library library;
+  final Track? track;
+  final double size;
+  final bool round;
+  const CoverImage(
+      {super.key, required this.library, required this.track, required this.size, this.round = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = track;
+    final radius = round ? size / 2 : size * 0.12;
+    final color = t == null ? Theme.of(context).colorScheme.primary : Color(t.account.color);
+    final placeholder = Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(radius),
+      ),
+      child: Icon(Icons.music_note, size: size * 0.55, color: color),
+    );
+    if (t == null || !t.hasCover) return placeholder;
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    return FutureBuilder<Uint8List?>(
+      future: library.tags.cover(t.item.id),
+      builder: (context, snap) {
+        final bytes = snap.data;
+        if (bytes == null) return placeholder;
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(radius),
+          child: Image.memory(
+            bytes,
+            width: size,
+            height: size,
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+            cacheWidth: (size * dpr).round(),
+            errorBuilder: (_, __, ___) => placeholder,
+          ),
+        );
+      },
+    );
+  }
+}
+
+class AlbumTile extends StatelessWidget {
+  final Library library;
+  final PlayerController player;
+  final Album album;
+  const AlbumTile({super.key, required this.library, required this.player, required this.album});
+
+  @override
+  Widget build(BuildContext context) {
+    final n = album.tracks.length;
+    return ListTile(
+      leading: CoverImage(library: library, track: album.coverTrack, size: 52),
+      title: Text(album.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+          '${album.artist}${album.year == null ? '' : ' · ${album.year}'} · '
+          '$n ${n == 1 ? 'canción' : 'canciones'}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute<void>(
+            builder: (_) =>
+                AlbumPage(library: library, player: player, albumKey: album.key)),
+      ),
+    );
+  }
+}
+
+class ArtistPage extends StatelessWidget {
+  final Library library;
+  final PlayerController player;
+  final String name;
+  const ArtistPage({super.key, required this.library, required this.player, required this.name});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: library,
+      builder: (context, _) {
+        final key = normalize(name);
+        final ar = library.artists.where((a) => normalize(a.name) == key).firstOrNull;
+        final tracks = ar?.tracks ?? const <Track>[];
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+            actions: [
+              IconButton(
+                tooltip: 'Reproducir todo',
+                icon: const Icon(Icons.play_arrow),
+                onPressed: tracks.isEmpty ? null : () => player.playList(tracks, 0),
+              ),
+              IconButton(
+                tooltip: 'Aleatorio',
+                icon: const Icon(Icons.shuffle),
+                onPressed: tracks.isEmpty ? null : () => player.playShuffled(tracks),
+              ),
+            ],
+          ),
+          body: ar == null
+              ? const _Empty(text: 'Este artista ya no está en la biblioteca.')
+              : ListView(
+                  padding: const EdgeInsets.only(bottom: 24),
+                  children: [
+                    for (final al in ar.albums)
+                      AlbumTile(library: library, player: player, album: al),
+                  ],
+                ),
+        );
+      },
+    );
+  }
+}
+
+class AlbumPage extends StatelessWidget {
+  final Library library;
+  final PlayerController player;
+  final String albumKey;
+  const AlbumPage(
+      {super.key, required this.library, required this.player, required this.albumKey});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: library,
+      builder: (context, _) {
+        final al = library.albums.where((a) => a.key == albumKey).firstOrNull;
+        if (al == null) {
+          return Scaffold(
+            appBar: AppBar(),
+            body: const _Empty(text: 'Este álbum ya no está en la biblioteca.'),
+          );
+        }
+        final tracks = al.tracks;
+        final accounts = {for (final t in tracks) t.account.title}.join(', ');
+        return Scaffold(
+          appBar: AppBar(title: Text(al.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
+          body: ListView(
+            padding: const EdgeInsets.only(bottom: 24),
+            children: [
+              const SizedBox(height: 8),
+              Center(child: CoverImage(library: library, track: al.coverTrack, size: 180)),
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(children: [
+                  Text(al.name,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.titleLarge),
+                  Text(
+                      '${al.artist}${al.year == null ? '' : ' · ${al.year}'} · '
+                      '${tracks.length} ${tracks.length == 1 ? 'canción' : 'canciones'}',
+                      textAlign: TextAlign.center),
+                  Text(accounts,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall),
+                ]),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  FilledButton.icon(
+                    onPressed: () => player.playList(tracks, 0),
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('Reproducir'),
+                  ),
+                  const SizedBox(width: 12),
+                  FilledButton.tonalIcon(
+                    onPressed: () => player.playShuffled(tracks),
+                    icon: const Icon(Icons.shuffle),
+                    label: const Text('Aleatorio'),
+                  ),
+                ]),
+              ),
+              for (var i = 0; i < tracks.length; i++)
+                TrackTile(
+                  library: library,
+                  track: tracks[i],
+                  showAccount: false,
+                  hideCover: true,
+                  onPlay: () => player.playList(tracks, i),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
 
 class _PlayBar extends StatelessWidget {

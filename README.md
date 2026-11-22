@@ -27,6 +27,13 @@ Basado en el núcleo de [multigdrive](https://github.com/luchorcompartidos/multi
 - Pausa sola con llamadas o al desconectar los auriculares.
 - Si el acceso a Drive vence (pausa larga o corte), vuelve a cargar desde el mismo punto.
 
+## E4 · v0.0.8 — Artista y álbum
+- Lee título, artista, álbum, año, número de pista y carátula del propio archivo
+  (MP3 con ID3, FLAC, M4A/AAC, OGG/Opus), pidiendo solo el comienzo de cada archivo.
+- Sin etiquetas: la carpeta es el álbum y la carpeta de arriba, el artista.
+- Vistas Artistas y Álbumes; carátulas en listas, reproductor y pantalla de bloqueo (Android).
+- Web: etiquetas guardadas en el navegador; carátulas solo mientras la página está abierta.
+
 ## Plan
 E1 Biblioteca · E2 Reproducir · E3 Segundo plano · E4 Artista y álbum · E5 Listas · E6 Sin conexión (MVP).
 

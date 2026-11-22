@@ -70,9 +70,10 @@ class ReproductorAudioHandler extends BaseAudioHandler with SeekHandler {
       mediaItem.add(MediaItem(
         id: t.item.id,
         title: t.title,
-        album: t.folder.isEmpty ? null : t.folder,
-        artist: t.account.title,
+        album: t.album,
+        artist: t.artist,
         duration: p.duration,
+        artUri: t.hasCover ? c.library.tags.coverUri(t.item.id) : null,
       ));
     }
   }

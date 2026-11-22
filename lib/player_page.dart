@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'library.dart';
+import 'library_page.dart';
 import 'player.dart';
 
 String fmtDuration(Duration d) {
@@ -47,11 +48,7 @@ class MiniPlayer extends StatelessWidget {
                   padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
                   child: Row(
                     children: [
-                      CircleAvatar(
-                        radius: 18,
-                        backgroundColor: Color(t.account.color),
-                        child: const Icon(Icons.music_note, color: Colors.white, size: 20),
-                      ),
+                      CoverImage(library: player.library, track: t, size: 40),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -65,7 +62,7 @@ class MiniPlayer extends StatelessWidget {
                               player.error ??
                                   (player.loading
                                       ? 'Cargando…'
-                                      : (t.folder.isEmpty ? t.account.title : t.folder)),
+                                      : '${t.artist} · ${t.album}'),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
@@ -129,22 +126,18 @@ class NowPlayingPage extends StatelessWidget {
           body: ListView(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
             children: [
-              Center(
-                child: Container(
-                  width: 180,
-                  height: 180,
-                  decoration: BoxDecoration(
-                    color: Color(t.account.color).withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  child: Icon(Icons.music_note, size: 96, color: Color(t.account.color)),
-                ),
-              ),
+              Center(child: CoverImage(library: library, track: t, size: 240)),
               const SizedBox(height: 20),
               Text(t.title,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 4),
+              Text('${t.artist} · ${t.album}',
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyLarge),
+              const SizedBox(height: 2),
               Text('${library.pathOf(t)} · ${t.account.title}',
                   textAlign: TextAlign.center,
                   maxLines: 2,
@@ -287,7 +280,7 @@ class _QueueTile extends StatelessWidget {
           style: TextStyle(
               fontWeight: current ? FontWeight.bold : null,
               color: played ? scheme.outline : null)),
-      subtitle: Text(track.folder.isEmpty ? track.account.title : track.folder,
+      subtitle: Text('${track.artist} · ${track.album}',
           maxLines: 1, overflow: TextOverflow.ellipsis),
       onTap: onTap,
     );
