@@ -15,6 +15,8 @@ import 'library.dart';
 import 'library_page.dart';
 import 'player.dart';
 import 'player_page.dart';
+import 'playlists.dart';
+import 'playlists_page.dart';
 import 'platform/platform.dart' as platform;
 import 'updates.dart';
 
@@ -28,20 +30,26 @@ Future<void> main() async {
   await store.load();
   final library = Library(store);
   final player = PlayerController(library);
+  final lists = PlaylistStore(store);
+  await lists.load();
+  library.lists = lists;
   await setupBackgroundAudio(player);
-  runApp(ReproductorApp(store: store, library: library, player: player, pending: pending));
+  runApp(ReproductorApp(
+      store: store, library: library, player: player, lists: lists, pending: pending));
 }
 
 class ReproductorApp extends StatelessWidget {
   final AccountStore store;
   final Library library;
   final PlayerController player;
+  final PlaylistStore lists;
   final auth.AuthResult? pending;
   const ReproductorApp(
       {super.key,
       required this.store,
       required this.library,
       required this.player,
+      required this.lists,
       this.pending});
 
   @override
@@ -54,7 +62,8 @@ class ReproductorApp extends StatelessWidget {
       theme: ThemeData(colorSchemeSeed: seed, useMaterial3: true),
       darkTheme: ThemeData(
           colorSchemeSeed: seed, brightness: Brightness.dark, useMaterial3: true),
-      home: HomePage(store: store, library: library, player: player, pending: pending),
+      home: HomePage(
+          store: store, library: library, player: player, lists: lists, pending: pending),
     );
   }
 }
@@ -63,12 +72,14 @@ class HomePage extends StatefulWidget {
   final AccountStore store;
   final Library library;
   final PlayerController player;
+  final PlaylistStore lists;
   final auth.AuthResult? pending;
   const HomePage(
       {super.key,
       required this.store,
       required this.library,
       required this.player,
+      required this.lists,
       this.pending});
 
   @override
@@ -77,9 +88,10 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   bool _busy = false;
-  int _tab = 0; // 0 = Biblioteca, 1 = Cuentas
+  int _tab = 0; // 0 = Biblioteca, 1 = Listas, 2 = Cuentas
   Library get _library => widget.library;
   PlayerController get _player => widget.player;
+  PlaylistStore get _lists => widget.lists;
 
   /// Android: se abrió el navegador y se espera la vuelta de Google.
   bool _waiting = false;
@@ -118,6 +130,7 @@ class _HomePageState extends State<HomePage> {
       } else {
         await _refreshAll();
       }
+      unawaited(_lists.sync());
       await _library.start();
     });
     Updates.fetch().then((r) {
@@ -161,6 +174,7 @@ class _HomePageState extends State<HomePage> {
       _snack('Cuenta conectada: ${a.email}. Leyendo su música…');
       if (mounted) setState(() => _busy = false);
       unawaited(_library.refresh(a));
+      unawaited(_lists.sync());
     } catch (e) {
       _showError(e);
     } finally {
@@ -411,10 +425,18 @@ class _HomePageState extends State<HomePage> {
         actions: [
           TextButton(onPressed: _showVersion, child: Text('v${Config.appVersion}')),
           IconButton(
-            tooltip: _tab == 0 ? 'Actualizar la biblioteca' : 'Revisar cuentas',
+            tooltip: switch (_tab) {
+              0 => 'Actualizar la biblioteca',
+              1 => 'Sincronizar las listas',
+              _ => 'Revisar cuentas',
+            },
             onPressed: _busy
                 ? null
-                : (_tab == 0 ? () => _library.refreshAll() : _refreshAll),
+                : switch (_tab) {
+                    0 => () => _library.refreshAll(),
+                    1 => () => _lists.sync(),
+                    _ => _refreshAll,
+                  },
             icon: const Icon(Icons.refresh),
           ),
         ],
@@ -423,7 +445,7 @@ class _HomePageState extends State<HomePage> {
           child: _busy ? const LinearProgressIndicator() : const SizedBox(height: 4),
         ),
       ),
-      floatingActionButton: _tab == 1
+      floatingActionButton: _tab == 2
           ? FloatingActionButton.extended(
               onPressed: _busy ? null : _addAccount,
               icon: const Icon(Icons.person_add),
@@ -443,6 +465,10 @@ class _HomePageState extends State<HomePage> {
               selectedIcon: Icon(Icons.library_music),
               label: 'Biblioteca'),
           NavigationDestination(
+              icon: Icon(Icons.queue_music_outlined),
+              selectedIcon: Icon(Icons.queue_music),
+              label: 'Listas'),
+          NavigationDestination(
               icon: Icon(Icons.manage_accounts_outlined),
               selectedIcon: Icon(Icons.manage_accounts),
               label: 'Cuentas'),
@@ -459,7 +485,11 @@ class _HomePageState extends State<HomePage> {
               child: Column(children: banners),
             ),
           Expanded(
-            child: _tab == 0 ? LibraryView(library: _library, player: _player) : _accountsView(scheme),
+            child: switch (_tab) {
+              0 => LibraryView(library: _library, player: _player),
+              1 => PlaylistsView(lists: _lists, library: _library, player: _player),
+              _ => _accountsView(scheme),
+            },
           ),
         ],
       ),
@@ -468,7 +498,7 @@ class _HomePageState extends State<HomePage> {
 
   Widget _accountsView(ColorScheme scheme) {
     return AnimatedBuilder(
-      animation: _library,
+      animation: Listenable.merge([_library, _lists]),
       builder: (context, _) {
         final accounts = store.accounts;
         return ListView(
@@ -512,6 +542,8 @@ class _HomePageState extends State<HomePage> {
                       switch (v) {
                         case 'probe':
                           _probeMusic(a);
+                        case 'main':
+                          _lists.setMain(a);
                         case 'reread':
                           _library.rebuild(a);
                         case 'alias':
@@ -523,6 +555,8 @@ class _HomePageState extends State<HomePage> {
                       }
                     },
                     itemBuilder: (_) => const [
+                      PopupMenuItem(
+                          value: 'main', child: Text('Guardar las listas en esta cuenta')),
                       PopupMenuItem(value: 'probe', child: Text('Probar acceso a la música')),
                       PopupMenuItem(value: 'reread', child: Text('Volver a leer su música')),
                       PopupMenuItem(value: 'alias', child: Text('Cambiar alias')),
@@ -539,7 +573,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   String _accountInfo(Account a) {
-    final prefix = a.nickname.isNotEmpty ? '${a.email} · ' : '';
+    final isMain = _lists.mainAccount?.email == a.email && store.accounts.length > 1;
+    final prefix = '${isMain ? '★ Listas · ' : ''}${a.nickname.isNotEmpty ? '${a.email} · ' : ''}';
     final p = _library.progressOf(a);
     if (p != null) return '${prefix}Leyendo su música… $p elementos';
     final e = _library.errors[a.email];

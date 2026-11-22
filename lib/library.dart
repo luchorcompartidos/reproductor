@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'accounts.dart';
 import 'drive_index.dart';
+import 'playlists.dart';
 import 'tag_store.dart';
 import 'tags.dart';
 
@@ -106,11 +107,15 @@ class Library extends ChangeNotifier {
   final IndexStore indexes =
       IndexStore(query: audioQuery, keep: keepItem, keyPrefix: 'audio_');
   final TagStore tags = TagStore();
+
+  /// Listas de reproducción (se asigna al iniciar la app).
+  PlaylistStore? lists;
   final Map<String, String> errors = {};
   final Set<String> _running = {}; // cuentas que se están leyendo ahora
   List<Track>? _tracks;
   List<Album>? _albums;
   List<Artist>? _artists;
+  Map<String, Track>? _byKey;
 
   Library(this.store) {
     tags.addListener(_changed);
@@ -123,6 +128,7 @@ class Library extends ChangeNotifier {
     _tracks = null;
     _albums = null;
     _artists = null;
+    _byKey = null;
     notifyListeners();
   }
 
@@ -284,6 +290,12 @@ class Library extends ChangeNotifier {
       ar.albums.sort((a, b) => (a.year ?? '').compareTo(b.year ?? ''));
     }
     return _artists = out;
+  }
+
+  /// Una canción por cuenta y archivo (null si ya no está en la biblioteca).
+  Track? trackByKey(String email, String id) {
+    final m = _byKey ??= {for (final t in tracks) '${t.account.email}|${t.item.id}': t};
+    return m['$email|$id'];
   }
 
   /// Busca por canción, artista, álbum o carpeta (todas las palabras, sin acentos).

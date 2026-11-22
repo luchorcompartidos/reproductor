@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'library.dart';
 import 'library_page.dart';
 import 'player.dart';
+import 'playlists_page.dart';
 
 String fmtDuration(Duration d) {
   final h = d.inHours;
@@ -122,7 +123,17 @@ class NowPlayingPage extends StatelessWidget {
         final queue = player.upcoming;
         final library = player.library;
         return Scaffold(
-          appBar: AppBar(title: const Text('Reproduciendo')),
+          appBar: AppBar(
+            title: const Text('Reproduciendo'),
+            actions: [
+              if (library.lists != null)
+                IconButton(
+                  tooltip: 'Agregar a lista',
+                  icon: const Icon(Icons.playlist_add),
+                  onPressed: () => addToPlaylist(context, library.lists!, [t]),
+                ),
+            ],
+          ),
           body: ListView(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
             children: [

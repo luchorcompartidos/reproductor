@@ -34,6 +34,13 @@ Basado en el núcleo de [multigdrive](https://github.com/luchorcompartidos/multi
 - Vistas Artistas y Álbumes; carátulas en listas, reproductor y pantalla de bloqueo (Android).
 - Web: etiquetas guardadas en el navegador; carátulas solo mientras la página está abierta.
 
+## E5 · v0.0.9 — Listas
+- Pestaña Listas: crear, renombrar, borrar, ordenar (arrastrando) y quitar canciones.
+- "Agregar a lista" desde una canción, un álbum, un artista, una carpeta o lo que está sonando.
+- Se guardan en el equipo y se sincronizan con la cuenta principal: carpeta oculta de la app
+  + copia visible "Reproductor - listas (respaldo).json" en Mi unidad. Gana la versión más nueva de cada lista.
+- La cuenta principal se elige en Cuentas → ⋮ → "Guardar las listas en esta cuenta".
+
 ## Plan
 E1 Biblioteca · E2 Reproducir · E3 Segundo plano · E4 Artista y álbum · E5 Listas · E6 Sin conexión (MVP).
 

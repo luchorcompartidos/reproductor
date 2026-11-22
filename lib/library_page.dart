@@ -7,6 +7,7 @@ import 'accounts.dart';
 import 'drive_index.dart';
 import 'library.dart';
 import 'player.dart';
+import 'playlists_page.dart';
 
 int _byName(DriveItem a, DriveItem b) => normalize(a.name).compareTo(normalize(b.name));
 
@@ -300,6 +301,12 @@ class FolderPage extends StatelessWidget {
                 icon: const Icon(Icons.shuffle),
                 onPressed: () => player.playShuffled(_allSongs(idx)),
               ),
+              if (library.lists != null)
+                IconButton(
+                  tooltip: 'Agregar todo a una lista',
+                  icon: const Icon(Icons.playlist_add),
+                  onPressed: () => addToPlaylist(context, library.lists!, _allSongs(idx)),
+                ),
             ],
           ),
           body: (folders.isEmpty && songs.isEmpty)
@@ -435,6 +442,15 @@ void showTrackSheet(BuildContext context, Library library, Track t, {VoidCallbac
                     icon: const Icon(Icons.play_arrow),
                     label: const Text('Reproducir'),
                   ),
+                if (library.lists != null)
+                  FilledButton.tonalIcon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      addToPlaylist(context, library.lists!, [t]);
+                    },
+                    icon: const Icon(Icons.playlist_add),
+                    label: const Text('Agregar a lista'),
+                  ),
                 FilledButton.tonalIcon(
                   onPressed: () => launchUrl(
                       Uri.parse('https://drive.google.com/file/d/${it.id}/view'),
@@ -553,6 +569,14 @@ class ArtistPage extends StatelessWidget {
                 icon: const Icon(Icons.shuffle),
                 onPressed: tracks.isEmpty ? null : () => player.playShuffled(tracks),
               ),
+              if (library.lists != null)
+                IconButton(
+                  tooltip: 'Agregar todo a una lista',
+                  icon: const Icon(Icons.playlist_add),
+                  onPressed: tracks.isEmpty
+                      ? null
+                      : () => addToPlaylist(context, library.lists!, tracks),
+                ),
             ],
           ),
           body: ar == null
@@ -592,7 +616,17 @@ class AlbumPage extends StatelessWidget {
         final tracks = al.tracks;
         final accounts = {for (final t in tracks) t.account.title}.join(', ');
         return Scaffold(
-          appBar: AppBar(title: Text(al.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
+          appBar: AppBar(
+            title: Text(al.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+            actions: [
+              if (library.lists != null)
+                IconButton(
+                  tooltip: 'Agregar el álbum a una lista',
+                  icon: const Icon(Icons.playlist_add),
+                  onPressed: () => addToPlaylist(context, library.lists!, tracks),
+                ),
+            ],
+          ),
           body: ListView(
             padding: const EdgeInsets.only(bottom: 24),
             children: [
