@@ -226,14 +226,14 @@ class NowPlayingPage extends StatelessWidget {
                   ),
                   IconButton(
                     tooltip: switch (player.repeat) {
-                      RepeatMode.off => 'Repetir: no',
-                      RepeatMode.all => 'Repetir: todo',
-                      RepeatMode.one => 'Repetir: esta canción',
+                      Repeat.off => 'Repetir: no',
+                      Repeat.all => 'Repetir: todo',
+                      Repeat.one => 'Repetir: esta canción',
                     },
                     onPressed: player.cycleRepeat,
                     icon: Icon(
-                      player.repeat == RepeatMode.one ? Icons.repeat_one : Icons.repeat,
-                      color: player.repeat == RepeatMode.off
+                      player.repeat == Repeat.one ? Icons.repeat_one : Icons.repeat,
+                      color: player.repeat == Repeat.off
                           ? scheme.onSurfaceVariant
                           : scheme.primary,
                     ),

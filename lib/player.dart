@@ -9,7 +9,7 @@ import 'accounts.dart';
 import 'library.dart';
 import 'platform/platform.dart' as platform;
 
-enum RepeatMode { off, all, one }
+enum Repeat { off, all, one }
 
 /// Reproductor: cola propia (para pedir un token vigente en cada canción),
 /// aleatorio y repetir.
@@ -30,7 +30,7 @@ class PlayerController extends ChangeNotifier {
   StreamSubscription<Duration?>? _durSub;
 
   bool shuffle = false;
-  RepeatMode repeat = RepeatMode.off;
+  Repeat repeat = Repeat.off;
   bool loading = false;
   String? error;
 
@@ -109,7 +109,7 @@ class PlayerController extends ChangeNotifier {
     if (_order.isEmpty) return;
     if (_pos < _order.length - 1) {
       _pos++;
-    } else if (repeat == RepeatMode.all) {
+    } else if (repeat == Repeat.all) {
       if (shuffle) _order.shuffle(_rnd);
       _pos = 0;
     } else {
@@ -131,7 +131,7 @@ class PlayerController extends ChangeNotifier {
     }
     if (_pos > 0) {
       _pos--;
-    } else if (repeat == RepeatMode.all) {
+    } else if (repeat == Repeat.all) {
       _pos = _order.length - 1;
     } else {
       await _player.seek(Duration.zero);
@@ -159,7 +159,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   void cycleRepeat() {
-    repeat = RepeatMode.values[(repeat.index + 1) % RepeatMode.values.length];
+    repeat = Repeat.values[(repeat.index + 1) % Repeat.values.length];
     notifyListeners();
   }
 
@@ -176,7 +176,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> _onCompleted() async {
-    if (repeat == RepeatMode.one) {
+    if (repeat == Repeat.one) {
       await _player.seek(Duration.zero);
       unawaited(_player.play());
       return;
