@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import 'accounts.dart';
+import 'background.dart';
 import 'auth/auth.dart' as auth;
 import 'config.dart';
 import 'library.dart';
@@ -25,13 +26,23 @@ Future<void> main() async {
   await auth.initAuth();
   final store = AccountStore();
   await store.load();
-  runApp(ReproductorApp(store: store, pending: pending));
+  final library = Library(store);
+  final player = PlayerController(library);
+  await setupBackgroundAudio(player);
+  runApp(ReproductorApp(store: store, library: library, player: player, pending: pending));
 }
 
 class ReproductorApp extends StatelessWidget {
   final AccountStore store;
+  final Library library;
+  final PlayerController player;
   final auth.AuthResult? pending;
-  const ReproductorApp({super.key, required this.store, this.pending});
+  const ReproductorApp(
+      {super.key,
+      required this.store,
+      required this.library,
+      required this.player,
+      this.pending});
 
   @override
   Widget build(BuildContext context) {
@@ -43,15 +54,22 @@ class ReproductorApp extends StatelessWidget {
       theme: ThemeData(colorSchemeSeed: seed, useMaterial3: true),
       darkTheme: ThemeData(
           colorSchemeSeed: seed, brightness: Brightness.dark, useMaterial3: true),
-      home: HomePage(store: store, pending: pending),
+      home: HomePage(store: store, library: library, player: player, pending: pending),
     );
   }
 }
 
 class HomePage extends StatefulWidget {
   final AccountStore store;
+  final Library library;
+  final PlayerController player;
   final auth.AuthResult? pending;
-  const HomePage({super.key, required this.store, this.pending});
+  const HomePage(
+      {super.key,
+      required this.store,
+      required this.library,
+      required this.player,
+      this.pending});
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -60,8 +78,8 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   bool _busy = false;
   int _tab = 0; // 0 = Biblioteca, 1 = Cuentas
-  late final Library _library = Library(store);
-  late final PlayerController _player = PlayerController(_library);
+  Library get _library => widget.library;
+  PlayerController get _player => widget.player;
 
   /// Android: se abrió el navegador y se espera la vuelta de Google.
   bool _waiting = false;
@@ -110,8 +128,6 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     _sub?.cancel();
-    _player.dispose();
-    _library.dispose();
     super.dispose();
   }
 

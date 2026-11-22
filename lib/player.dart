@@ -28,6 +28,9 @@ class PlayerController extends ChangeNotifier {
   String? _blobUrl;
   StreamSubscription<PlayerState>? _stateSub;
   StreamSubscription<Duration?>? _durSub;
+  StreamSubscription<PlaybackEvent>? _eventSub;
+  DateTime _loadedAt = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _retried = false; // un reintento con acceso nuevo si falla la conexión
 
   bool shuffle = false;
   Repeat repeat = Repeat.off;
@@ -42,7 +45,25 @@ class PlayerController extends ChangeNotifier {
       notifyListeners();
     });
     _durSub = _player.durationStream.listen((_) => notifyListeners());
+    // Error de conexión a mitad de canción (por ejemplo, acceso vencido):
+    // se vuelve a cargar una vez, con acceso nuevo, desde el mismo punto.
+    _eventSub = _player.playbackEventStream.listen((_) {}, onError: (Object e, StackTrace _) {
+      if (current == null || loading) return;
+      if (!_retried) {
+        _retried = true;
+        _load(at: _player.position);
+      } else {
+        error = 'Se cortó la conexión con Drive: $e';
+        notifyListeners();
+      }
+    });
   }
+
+  /// El reproductor de audio (lo usa el servicio de segundo plano de Android).
+  AudioPlayer get audio => _player;
+
+  /// Hay una canción después de la actual (o se repite la cola).
+  bool get hasNext => _pos < _order.length - 1 || repeat == Repeat.all;
 
   Track? get current =>
       (_pos >= 0 && _pos < _order.length) ? _queue[_order[_pos]] : null;
@@ -88,20 +109,27 @@ class PlayerController extends ChangeNotifier {
     await _load();
   }
 
-  Future<void> togglePlay() async {
+  Future<void> togglePlay() => _player.playing ? pause() : resume();
+
+  Future<void> pause() async {
+    await _player.pause();
+    notifyListeners();
+  }
+
+  Future<void> resume() async {
     if (current == null) return;
-    if (_player.playing) {
-      await _player.pause();
-    } else {
-      if (_player.processingState == ProcessingState.completed) {
-        await _player.seek(Duration.zero);
-      }
-      if (_player.processingState == ProcessingState.idle) {
-        await _load();
-        return;
-      }
-      unawaited(_player.play());
+    if (_player.processingState == ProcessingState.completed) {
+      await _player.seek(Duration.zero);
     }
+    // Sin fuente cargada, o cargada hace mucho (el acceso a Drive dura ~1 hora):
+    // se vuelve a cargar con acceso nuevo desde el mismo punto.
+    final stale = !kIsWeb &&
+        DateTime.now().difference(_loadedAt) > const Duration(minutes: 45);
+    if (_player.processingState == ProcessingState.idle || stale) {
+      await _load(at: _player.position);
+      return;
+    }
+    unawaited(_player.play());
     notifyListeners();
   }
 
@@ -190,15 +218,17 @@ class PlayerController extends ChangeNotifier {
     _blobUrl = null;
   }
 
-  Future<void> _load() async {
+  Future<void> _load({Duration? at}) async {
     final t = current;
     if (t == null) return;
     final seq = ++_seq;
+    if (at == null) _retried = false;
     loading = true;
     error = null;
     notifyListeners();
     try {
-      await _player.stop();
+      // Sin stop(): así el servicio de segundo plano no se corta entre canciones.
+      await _player.pause();
       final token = await library.store.tokenFor(t.account);
       if (seq != _seq) return;
       final url = Uri.parse(
@@ -211,12 +241,14 @@ class PlayerController extends ChangeNotifier {
         _freeBlob();
         final blob = platform.blobUrl(res.bodyBytes, t.item.mime);
         _blobUrl = blob;
-        await _player.setAudioSource(AudioSource.uri(Uri.parse(blob)));
+        await _player.setAudioSource(AudioSource.uri(Uri.parse(blob)), initialPosition: at);
       } else {
         await _player.setAudioSource(
-            AudioSource.uri(url, headers: {'Authorization': 'Bearer $token'}));
+            AudioSource.uri(url, headers: {'Authorization': 'Bearer $token'}),
+            initialPosition: at);
       }
       if (seq != _seq) return;
+      _loadedAt = DateTime.now();
       loading = false;
       notifyListeners();
       unawaited(_player.play());
@@ -234,6 +266,7 @@ class PlayerController extends ChangeNotifier {
   void dispose() {
     _stateSub?.cancel();
     _durSub?.cancel();
+    _eventSub?.cancel();
     _player.dispose();
     _freeBlob();
     super.dispose();

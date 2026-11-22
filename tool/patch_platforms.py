@@ -30,6 +30,14 @@ def android():
     if "usesCleartextTraffic" not in s:
         # just_audio usa un proxy local (http://127.0.0.1) para mandar el token a Drive
         patch(m, "<application", '<application android:usesCleartextTraffic="true"')
+    # Segundo plano (audio_service): permisos, servicio y botones multimedia
+    s = open(m, encoding="utf-8").read()
+    for perm in ["WAKE_LOCK", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_MEDIA_PLAYBACK"]:
+        if f"android.permission.{perm}\"" not in s:
+            patch(m, "<application", f'<uses-permission android:name="android.permission.{perm}" />\n    <application')
+            s = open(m, encoding="utf-8").read()
+    patch(m, "</application>", AUDIO_SERVICE + "\n    </application>")
+    main_activity()
     desugar()
     # Vuelta del inicio de sesión: com.luchorcompartidos.reproductor://oauth
     patch(m, "</activity>", f"""    <meta-data android:name="flutter_deeplinking_enabled" android:value="false" />
@@ -40,6 +48,38 @@ def android():
                 <data android:scheme="{SCHEME}" android:host="oauth" />
             </intent-filter>
         </activity>""")
+
+
+AUDIO_SERVICE = """        <service android:name="com.ryanheise.audioservice.AudioService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+        <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>"""
+
+
+def main_activity():
+    """MainActivity hereda de AudioServiceActivity (requisito de audio_service)."""
+    import glob
+    files = glob.glob("android/app/src/main/kotlin/**/MainActivity.kt", recursive=True)
+    if not files:
+        sys.exit("::error::No encontré MainActivity.kt")
+    for f in files:
+        s = open(f, encoding="utf-8").read()
+        s = s.replace("import io.flutter.embedding.android.FlutterActivity",
+                      "import com.ryanheise.audioservice.AudioServiceActivity")
+        s = s.replace(": FlutterActivity()", ": AudioServiceActivity()")
+        if "AudioServiceActivity()" not in s:
+            sys.exit(f"::error::No pude adaptar {f}")
+        open(f, "w", encoding="utf-8").write(s)
+        print(f"OK {f}")
 
 
 HEAD_SCRIPT = """<script>

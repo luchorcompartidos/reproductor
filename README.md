@@ -21,6 +21,12 @@ Basado en el núcleo de [multigdrive](https://github.com/luchorcompartidos/multi
 - Barra de reproducción abajo y pantalla completa con avance, anterior/siguiente, aleatorio, repetir y cola.
 - Android y Windows: streaming desde Drive. Web: descarga la canción completa y después suena.
 
+## E3 · v0.0.7 — Segundo plano (Android)
+- Sigue sonando con la pantalla apagada o en otra app (servicio de reproducción).
+- Controles en la notificación, la pantalla de bloqueo, auriculares y Bluetooth.
+- Pausa sola con llamadas o al desconectar los auriculares.
+- Si el acceso a Drive vence (pausa larga o corte), vuelve a cargar desde el mismo punto.
+
 ## Plan
 E1 Biblioteca · E2 Reproducir · E3 Segundo plano · E4 Artista y álbum · E5 Listas · E6 Sin conexión (MVP).
 
